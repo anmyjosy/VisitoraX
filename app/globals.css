@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+:root {
+  --background: #111827; /* A dark gray, almost black */
+  --foreground: #f9fafb; /* A very light gray, almost white */
+}
+
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* === TICKET SHAPE === */
+.ticket-shape {
+  border-radius: 20px;
+  position: relative;
+}
+
+/* Notches on left & right */
+.ticket-shape::before,
+.ticket-shape::after {
+  content: '';
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  background: #111827; /* match page bg-gray-900 */
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+}
+.ticket-shape::before {
+  left: -15px;
+}
+.ticket-shape::after {
+  right: -15px;
+}
