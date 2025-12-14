@@ -232,7 +232,12 @@ export default function LoginPage() {
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
+    const ctx = canvas.getContext("2d");
+
+    // Flip the canvas context horizontally to match the mirrored video preview
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0);
     
     canvas.toBlob((blob) => {
       setCapturedImageBlob(blob);
@@ -521,7 +526,7 @@ export default function LoginPage() {
       <main className="flex-1 flex flex-col">
         <div className="flex-1 flex items-center justify-center p-6">
         
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(85,36,131,0.15)] p-8 sm:p-10 relative overflow-hidden">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(85,36,131,0.15)] p-8 relative overflow-hidden">
             
             {/* STEPPER INDICATOR */}
             {authStep !== 'email' && (
@@ -570,7 +575,7 @@ export default function LoginPage() {
                             </div>
                         )}
                         <h2 className="text-3xl font-bold text-neutral-900 mb-3">Welcome</h2>
-                        <p className="text-neutral-500 mb-8 text-sm">Enter your email to receive a secure access code</p>
+                        <p className="text-neutral-500 mb-6 text-sm">Enter your email to receive a secure access code</p>
                         
                         <form onSubmit={handleEmailSubmit} className="space-y-4">
                             <div className="relative group">
@@ -622,7 +627,7 @@ export default function LoginPage() {
                             </div>
                         )}
                         <h2 className="text-3xl font-bold text-neutral-900 mb-3">Check Inbox</h2>
-                        <p className="text-neutral-500 mb-8 text-sm">We sent a code to <span className="font-semibold text-neutral-800">{email}</span></p>
+                        <p className="text-neutral-500 mb-6 text-sm">We sent a code to <span className="font-semibold text-neutral-800">{email}</span></p>
                         
                         <form onSubmit={handleOtpSubmit} className="space-y-6">
                             <div className="flex justify-center gap-3">
@@ -776,10 +781,8 @@ export default function LoginPage() {
                                 }`}>{message}</p>
                             </div>
                         )}
-                        <h2 className="text-2xl font-bold text-neutral-900 mb-2">Face ID Setup</h2>
-                        <p className="text-neutral-500 mb-5 text-sm">Position your face in the frame to capture your photo.</p>
 
-                        <div className="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-black mb-6 shadow-inner ring-4 ring-neutral-100">
+                        <div className="relative w-full aspect-[4/3] md:aspect-video rounded-2xl overflow-hidden bg-black mb-6 shadow-inner ring-4 ring-neutral-100">
                             {isFaceCaptured ? (
                                 <img src={previewFaceUrl} alt="Face Preview" className="w-full h-full object-cover" />
                             ) : (
@@ -804,7 +807,7 @@ export default function LoginPage() {
                                 <button 
                                     onClick={handleFaceSubmit}
                                     disabled={loading}
-                                    className="w-full bg-[#552483] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#451d6b] transition-all disabled:opacity-70"
+                                    className="w-full bg-[#552483] text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-[#451d6b] transition-all disabled:opacity-70"
                                 >
                                     {loading ? "Finalizing..." : "Confirm & Complete"}
                                 </button>
@@ -816,7 +819,7 @@ export default function LoginPage() {
                             <button 
                                 onClick={captureForRegistration} 
                                 disabled={!currentFaceDescriptor}
-                                className="w-full bg-green-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full bg-green-600 text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Capture Photo
                             </button>
