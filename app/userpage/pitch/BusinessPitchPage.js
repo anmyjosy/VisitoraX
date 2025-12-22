@@ -11,7 +11,7 @@ export default function BusinessPitchPage() {
   const [pitchDescription, setPitchDescription] = useState("");
   const [message, setMessage] = useState("");
   const { setLoggedIn } = useContext(UserContext) || {};
-  const [email, setEmail] = useState(null); // State to hold the user's email
+  const [userId, setUserId] = useState(null); // State to hold the user's ID
 
   const router = useRouter();
 
@@ -22,7 +22,7 @@ export default function BusinessPitchPage() {
       return;
     }
 
-    const { email: sessionEmail, timestamp } = JSON.parse(sessionData);
+    const { identifier: sessionUserId, timestamp } = JSON.parse(sessionData);
     const tenMinutes = 10 * 60 * 1000;
     if (Date.now() - timestamp > tenMinutes) {
       localStorage.removeItem("session");
@@ -30,7 +30,7 @@ export default function BusinessPitchPage() {
       return;
     }
 
-    setEmail(sessionEmail);
+    setUserId(sessionUserId);
 
     if (setLoggedIn) {
       setLoggedIn(true);
@@ -47,7 +47,7 @@ export default function BusinessPitchPage() {
 
     setMessage("Saving your business pitch...");
 
-    if (!email) {
+    if (!userId) {
       setMessage("Session expired. Please log in again.");
       return;
     }
@@ -55,7 +55,7 @@ export default function BusinessPitchPage() {
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("name")
-      .eq("email", email)
+      .eq("user_id", userId)
       .single();
     if (userError || !userData) {
       setMessage("Error fetching user details: " + (userError?.message || "User not found."));
@@ -67,7 +67,7 @@ export default function BusinessPitchPage() {
     // Insert into business_pitch table
     const { error } = await supabase.from("business_pitch").insert([
       {
-        user_email: email,
+        user_id: userId,
         company_name: companyName,
         pitch_title: pitchTitle,
         pitch_description: pitchDescription,
@@ -77,9 +77,10 @@ export default function BusinessPitchPage() {
       },
     ]);
 
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
     const { error: recentError } = await supabase.from("recent").insert([
       {
-        email: email,
+        ...(isEmail ? { email: userId } : { phone: userId }),
         name: userName,
         purpose: "pitch",
         status: "Pending",

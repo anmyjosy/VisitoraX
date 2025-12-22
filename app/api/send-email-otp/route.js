@@ -5,6 +5,13 @@ export async function POST(request) {
   try {
     const { email, otp } = await request.json();
 
+    if (!email || !otp) {
+      return NextResponse.json(
+        { error: "Email and OTP are required" },
+        { status: 400 }
+      );
+    }
+
     // Ensure you have SMTP_USER and SMTP_PASS in your .env.local file
     const transporter = nodemailer.createTransport({
       host: "smtp.gmail.com",
@@ -24,9 +31,9 @@ export async function POST(request) {
       text: `Your OTP code is: ${otp}. It expires in 5 minutes.`,
     });
 
-    return NextResponse.json({ message: "OTP sent successfully" }, { status: 200 });
+    return NextResponse.json({ success: true, message: "OTP sent successfully" }, { status: 200 });
   } catch (error) {
     console.error("Error in /api/send-otp:", error);
-    return NextResponse.json({ error: "Error sending email" }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Error sending email" }, { status: 500 });
   }
 }

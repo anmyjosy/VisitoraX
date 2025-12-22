@@ -162,7 +162,7 @@ const TCell = ({ children, className = "", align = "left" }) => (
 
 const VisitLogRow = ({ row }) => (
   <tr className="hover:bg-zinc-50 transition-colors group">
-    <TCell><span className="font-semibold text-[#552483]">{row.user_email}</span></TCell>
+    <TCell><span className="font-semibold text-[#552483]">{row.user_id}</span></TCell>
     <TCell>{row.company}</TCell>
     <TCell>{row.friend_name}</TCell>
     <TCell>{row.friend_email || <span className="text-zinc-300">-</span>}</TCell>
@@ -174,7 +174,7 @@ const VisitLogRow = ({ row }) => (
 
 const TechEventRow = ({ row }) => (
   <tr className="hover:bg-zinc-50 transition-colors">
-    <TCell><span className="font-semibold text-[#552483]">{row.user_email}</span></TCell>
+    <TCell><span className="font-semibold text-[#552483]">{row.user_id}</span></TCell>
     <TCell>{row.event_name}</TCell>
     <TCell>{row.role_of_interest}</TCell>
     <TCell className="font-mono text-xs tabular-nums">{row.event_date_time ? new Date(row.event_date_time).toLocaleString() : "-"}</TCell>
@@ -184,7 +184,7 @@ const TechEventRow = ({ row }) => (
 
 const InterviewRow = ({ row }) => (
   <tr className="hover:bg-zinc-50 transition-colors">
-    <TCell><span className="font-semibold text-[#552483]">{row.user_email}</span></TCell>
+    <TCell><span className="font-semibold text-[#552483]">{row.user_id}</span></TCell>
     <TCell>{row.company}</TCell>
     <TCell>{row.position}</TCell>
     <TCell className="font-mono text-xs tabular-nums">{row.date_time ? new Date(row.date_time).toLocaleString() : "-"}</TCell>
@@ -194,7 +194,7 @@ const InterviewRow = ({ row }) => (
 
 const PitchRow = ({ row }) => (
   <tr className="hover:bg-zinc-50 transition-colors">
-    <TCell><span className="font-semibold text-[#552483]">{row.user_email}</span></TCell>
+    <TCell><span className="font-semibold text-[#552483]">{row.user_id}</span></TCell>
     <TCell>{row.company_name}</TCell>
     <TCell>"{row.pitch_title}"</TCell>
     <TCell><div className="max-w-[200px] truncate text-zinc-400">{row.pitch_description}</div></TCell>
@@ -249,7 +249,7 @@ export default function AdminDashboard() {
     const fetchDashboardData = async () => {
       setLoading(true);
       const { count: userCount, data: usersData } = await supabase.from("users").select("*", { count: "exact" });
-      const { data: approvalData } = await supabase.from("users").select("name, email, face_image_status, face_image_url").eq("face_image_status", "pending");
+      const { data: approvalData } = await supabase.from("users").select("name, user_id, face_image_status, face_image_url").eq("face_image_status", "pending");
       
       if (approvalData) {
         setFaceApprovalUsers(approvalData.filter(u => u.face_image_url).map(u => ({...u, face_image_url: `${u.face_image_url}?t=${Date.now()}`})));
@@ -262,13 +262,16 @@ export default function AdminDashboard() {
       const detailedActivity = await Promise.all(allActivity.map(async (activity) => {
         const table = tableMap[activity.purpose];
         if (!table) return { ...activity, details: null };
-        const { data: details } = await supabase.from(table).select("*").eq("user_email", activity.email).eq("created_at", activity.created_at).single();
+        const identifier = activity.email || activity.phone;
+        if (!identifier) return { ...activity, details: null };
+        const { data: details } = await supabase.from(table).select("*").eq("user_id", identifier).eq("created_at", activity.created_at).single();
         return { ...activity, details };
       }));
 
       const latestMap = new Map();
       for (const item of detailedActivity) {
-        if (!latestMap.has(item.email)) latestMap.set(item.email, item);
+        const key = item.email || item.phone;
+        if (key && !latestMap.has(key)) latestMap.set(key, item);
       }
       const latest = Array.from(latestMap.values());
       
@@ -361,25 +364,25 @@ export default function AdminDashboard() {
   const filteredDisplayActivity = useMemo(() => {
     let filtered = recentActivity;
     if (dateFilter) filtered = filtered.filter((item) => item.created_at && new Date(item.created_at).toLocaleDateString("en-CA") === dateFilter);
-    if (searchFilter) filtered = filtered.filter((item) => item.email.toLowerCase().includes(searchFilter.toLowerCase()));
+    if (searchFilter) filtered = filtered.filter((item) => (item.email || item.phone || '').toLowerCase().includes(searchFilter.toLowerCase()));
     return filtered;
   }, [recentActivity, dateFilter, searchFilter]);
 
   const filteredUsers = useMemo(() => {
     if (!userSearchFilter) return allUsers;
     const term = userSearchFilter.toLowerCase();
-    return allUsers.filter((user) => user.name?.toLowerCase().includes(term) || user.email?.toLowerCase().includes(term));
+    return allUsers.filter((user) => user.name?.toLowerCase().includes(term) || user.user_id?.toLowerCase().includes(term));
   }, [allUsers, userSearchFilter]);
 
   const handleApproveFace = async (user) => {
     if (!user.face_image_url) return;
-    await supabase.from("users").update({ face_image_status: "approved" }).eq("email", user.email);
-    setFaceApprovalUsers((prev) => prev.filter((u) => u.email !== user.email));
+    await supabase.from("users").update({ face_image_status: "approved" }).eq("user_id", user.user_id);
+    setFaceApprovalUsers((prev) => prev.filter((u) => u.user_id !== user.user_id));
   };
   const submitRejection = async () => {
     if (!userToReject) return;
-    await supabase.from("users").update({ face_image_status: "rejected", admin_say: rejectionReason || "No reason provided." }).eq("email", userToReject.email);
-    setFaceApprovalUsers((prev) => prev.filter((u) => u.email !== userToReject.email));
+    await supabase.from("users").update({ face_image_status: "rejected", admin_say: rejectionReason || "No reason provided." }).eq("user_id", userToReject.user_id);
+    setFaceApprovalUsers((prev) => prev.filter((u) => u.user_id !== userToReject.user_id));
     setUserToReject(null);
     setRejectionReason("");
   };
@@ -463,7 +466,7 @@ export default function AdminDashboard() {
                  <div key={item.id} className="flex items-center justify-between p-3 rounded border border-zinc-100 bg-zinc-50">
                     <div>
                         <p className="text-xs font-bold text-[#552483] truncate max-w-[150px]">{item.name}</p>
-                        <p className="text-[10px] text-zinc-500 truncate max-w-[150px]">{item.email}</p>
+                        <p className="text-[10px] text-zinc-500 truncate max-w-[150px]">{item.email || item.phone}</p>
                     </div>
                     <span className="text-[10px] font-bold text-zinc-400 uppercase bg-white px-2 py-0.5 rounded border border-zinc-200">{item.purpose}</span>
                  </div>
@@ -482,7 +485,7 @@ export default function AdminDashboard() {
               <div className="flex gap-2">
                   <div className="relative">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-zinc-400 pointer-events-none"><Icons.Search /></div>
-                      <input type="text" placeholder="Search by email..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} className="pl-8 pr-3 py-1.5 text-xs text-zinc-900 bg-zinc-50 border border-zinc-200 rounded focus:border-zinc-400 outline-none w-48 transition-colors" />
+                      <input type="text" placeholder="Search by email or phone..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} className="pl-8 pr-3 py-1.5 text-xs text-zinc-900 bg-zinc-50 border border-zinc-200 rounded focus:border-zinc-400 outline-none w-48 transition-colors" />
                   </div>
                   <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="px-2 py-1.5 text-xs bg-zinc-50 border border-zinc-200 rounded focus:border-zinc-400 outline-none transition-colors text-zinc-600" />
               </div>
@@ -504,7 +507,7 @@ export default function AdminDashboard() {
                       <TCell>
                           <div>
                               <p className="text-xs font-semibold text-[#552483]">{item.name}</p>
-                              <p className="text-[10px] text-zinc-500">{item.email}</p>
+                              <p className="text-[10px] text-zinc-500">{item.email || item.phone}</p>
                           </div>
                       </TCell>
                       <TCell><span className="text-[10px] font-bold uppercase text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded">{item.purpose}</span></TCell>
@@ -531,7 +534,7 @@ export default function AdminDashboard() {
                {faceApprovalUsers.length > 0 ? (
                  faceApprovalUsers.map((user) => (
                    <div
-                     key={user.email}
+                     key={user.user_id}
                      className="bg-zinc-50 border border-zinc-200 rounded-lg p-3 hover:bg-zinc-100 transition"
                    >
                      <div className="flex items-center space-x-3">
@@ -546,7 +549,7 @@ export default function AdminDashboard() {
            
                        <div className="flex flex-col">
                          <p className="font-semibold text-sm text-[#552483]">{user.name}</p>
-                         <p className="text-xs text-zinc-500">{user.email}</p>
+                         <p className="text-xs text-zinc-500">{user.user_id}</p>
                        </div>
                      </div>
                      <div className="flex justify-end space-x-2 mt-3">
@@ -566,7 +569,7 @@ export default function AdminDashboard() {
                  <h3 className="text-xs font-bold text-[#552483] uppercase tracking-widest">User Database</h3>
                  <div className="relative">
                     <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-zinc-400 pointer-events-none"><Icons.Search /></div>
-                    <input type="text" placeholder="Search by name or email..." value={userSearchFilter} onChange={(e) => setUserSearchFilter(e.target.value)} className="pl-8 pr-3 py-1.5 text-xs text-zinc-900 bg-zinc-50 border border-zinc-200 rounded focus:border-zinc-400 outline-none w-48 transition-colors" />
+                    <input type="text" placeholder="Search by name, email or phone..." value={userSearchFilter} onChange={(e) => setUserSearchFilter(e.target.value)} className="pl-8 pr-3 py-1.5 text-xs text-zinc-900 bg-zinc-50 border border-zinc-200 rounded focus:border-zinc-400 outline-none w-48 transition-colors" />
                  </div>
              </div>
              <div className="flex-1 overflow-y-auto">
@@ -574,7 +577,7 @@ export default function AdminDashboard() {
                      <thead className="sticky top-0 bg-white z-10 shadow-sm">
                          <tr>
                              <THead>Name</THead>
-                             <THead>Email</THead>
+                             <THead>Email / Phone</THead>
                              <THead>Company</THead>
                              <THead>Joined</THead>
                          </tr>
@@ -583,7 +586,7 @@ export default function AdminDashboard() {
                          {filteredUsers.map(u => (
                              <tr key={u.id} className="hover:bg-zinc-50 transition-colors">
                                  <TCell><span className="font-medium text-[#552483]">{u.name}</span></TCell>
-                                 <TCell>{u.email}</TCell>
+                                 <TCell>{u.user_id}</TCell>
                                  <TCell>{u.company || "—"}</TCell>
                                  <TCell className="font-mono text-xs tabular-nums text-zinc-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}</TCell>
                              </tr>

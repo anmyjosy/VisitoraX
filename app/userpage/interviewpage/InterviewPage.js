@@ -9,7 +9,7 @@ export default function InterviewPage() {
   const router = useRouter();
   const { setLoggedIn } = useContext(UserContext) || {};
 
-  const [email, setEmail] = useState(null); // State to hold the user's email
+  const [userId, setUserId] = useState(null); // State to hold the user's ID
   const [company, setCompany] = useState("");
   const [position, setPosition] = useState("");
   const [dateTime, setDateTime] = useState("");
@@ -23,7 +23,7 @@ export default function InterviewPage() {
       return;
     }
 
-    const { email: sessionEmail, timestamp } = JSON.parse(sessionData);
+    const { identifier: sessionUserId, timestamp } = JSON.parse(sessionData);
     const tenMinutes = 10 * 60 * 1000;
     if (Date.now() - timestamp > tenMinutes) {
       localStorage.removeItem("session");
@@ -31,7 +31,7 @@ export default function InterviewPage() {
       return;
     }
 
-    setEmail(sessionEmail);
+    setUserId(sessionUserId);
 
     if (setLoggedIn) {
       setLoggedIn(true);
@@ -46,7 +46,7 @@ export default function InterviewPage() {
       return;
     }
 
-    if (!email) {
+    if (!userId) {
       setMessage("Session expired. Please log in again.");
       return;
     }
@@ -54,7 +54,7 @@ export default function InterviewPage() {
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("name")
-      .eq("email", email)
+      .eq("user_id", userId)
       .single();
     if (userError || !userData) {
       setMessage("Error fetching user details: " + (userError?.message || "User not found."));
@@ -66,7 +66,7 @@ export default function InterviewPage() {
     const creationTime = new Date();
     const { error } = await supabase.from("interview").insert([
       {
-        user_email: email,
+        user_id: userId,
         company: company,
         position: position,
         date_time: dateTime, // Supabase can take ISO string from datetime-local
@@ -75,9 +75,10 @@ export default function InterviewPage() {
         check_out: null,
       },
     ]);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
     const { error: recentError } = await supabase.from("recent").insert([
       {
-        email: email,
+        ...(isEmail ? { email: userId } : { phone: userId }),
         name: userName,
         purpose: "interview",
         status: "Pending",
@@ -87,8 +88,8 @@ export default function InterviewPage() {
       },
     ]);
 
-    if (error) {
-      setMessage("Error submitting interview: " + error.message);
+    if (error || recentError) {
+      setMessage("Error submitting interview: " + (error?.message || recentError?.message));
     } else {
       setMessage("Interview details submitted successfully!");
       router.push(`/userpage`);

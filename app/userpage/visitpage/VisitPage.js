@@ -13,7 +13,7 @@ export default function VisitPage() {
   const [message, setMessage] = useState("");
   const { setLoggedIn } = useContext(UserContext) || {};
   const router = useRouter();
-  const [email, setEmail] = useState(null); // State to hold the user's email
+  const [userId, setUserId] = useState(null); // State to hold the user's ID
 
   useEffect(() => {
     const sessionData = localStorage.getItem("session");
@@ -22,7 +22,7 @@ export default function VisitPage() {
       return;
     }
 
-    const { email: sessionEmail, timestamp } = JSON.parse(sessionData);
+    const { identifier: sessionUserId, timestamp } = JSON.parse(sessionData);
     const tenMinutes = 10 * 60 * 1000;
     if (Date.now() - timestamp > tenMinutes) {
       localStorage.removeItem("session");
@@ -30,7 +30,7 @@ export default function VisitPage() {
       return;
     }
 
-    setEmail(sessionEmail);
+    setUserId(sessionUserId);
 
     if (setLoggedIn) {
       setLoggedIn(true);
@@ -47,7 +47,7 @@ export default function VisitPage() {
 
     setMessage("Saving visit details...");
 
-    if (!email) {
+    if (!userId) {
       setMessage("Session expired. Please log in again.");
       return;
     }
@@ -56,7 +56,7 @@ export default function VisitPage() {
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("name")
-      .eq("email", email)
+      .eq("user_id", userId)
       .single();
 
     if (userError || !userData) {
@@ -70,7 +70,7 @@ export default function VisitPage() {
     // 2. Insert into visitlogs table
     const { error } = await supabase.from("visitlogs").insert([
       {
-        user_email: email,   // the logged-in user's email
+        user_id: userId,   // the logged-in user's ID
         company: company,
         friend_name: friendName,
         friend_email: friendEmail,
@@ -82,20 +82,19 @@ export default function VisitPage() {
     ]);
 
     // 3. Insert into recent table
-    const { error: recentError } = await supabase.from("recent").insert([
-      {
-        email: email,
-        name: userName,
-        purpose: "visit",
-        status: "Pending",
-        created_at: creationTime,
-        check_in: null,
-        check_out: null,
-      },
-    ]);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
+    const { error: recentError } = await supabase.from("recent").insert([{
+      ...(isEmail ? { email: userId } : { phone: userId }),
+      name: userName,
+      purpose: "visit",
+      status: "Pending",
+      created_at: creationTime,
+      check_in: null,
+      check_out: null,
+    }]);
 
     if (error || recentError) {
-      setMessage("Error saving visit: " + error.message);
+      setMessage("Error saving visit: " + (error?.message || recentError?.message));
       return;
     }
 

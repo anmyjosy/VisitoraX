@@ -38,7 +38,7 @@ export default function Userpage() {
   const [currentReservation, setCurrentReservation] = useState(null);
   const [pastReservations, setPastReservations] = useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [email, setEmail] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [userDetails, setUserDetails] = useState(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -85,12 +85,12 @@ export default function Userpage() {
     const sessionData = localStorage.getItem("session");
     if (!sessionData) { router.push("/login"); return; }
 
-    const { email: sessionEmail, timestamp } = JSON.parse(sessionData);
+    const { identifier: sessionUserId, timestamp } = JSON.parse(sessionData);
     if (Date.now() - timestamp > 10 * 60 * 1000) {
       localStorage.removeItem("session"); router.push("/login"); return;
     }
 
-    setEmail(sessionEmail);
+    setUserId(sessionUserId);
     if (setLoggedIn) setLoggedIn(true);
 
     const fetchData = async () => {
@@ -98,7 +98,7 @@ export default function Userpage() {
       const { data: user, error: userError } = await supabase
         .from("users")
         .select("name, company, address, dob, face_image_url, face_image_status") 
-        .eq("email", sessionEmail)
+        .eq("user_id", sessionUserId)
         .single();
 
       if (userError || !user) { setMessage("Could not retrieve user information."); setLoading(false); return; }
@@ -115,7 +115,7 @@ export default function Userpage() {
       let active = null;
 
       for (let table of tables) {
-        const { data } = await supabase.from(table).select("*").eq("user_email", sessionEmail).is("check_out", null).order("created_at", { ascending: false }).limit(1);
+        const { data } = await supabase.from(table).select("*").eq("user_id", sessionUserId).is("check_out", null).order("created_at", { ascending: false }).limit(1);
         if (data && data.length > 0) {
           const typeMap = { visitlogs: "visit", business_pitch: "pitch", interview: "interview", tech_event: "tech" };
           active = { type: typeMap[table], data: data[0] };
@@ -126,7 +126,7 @@ export default function Userpage() {
       setLoading(false);
     };
 
-    if (sessionEmail) fetchData();
+    if (sessionUserId) fetchData();
   }, [router, setLoggedIn]);
 
   useEffect(() => {
@@ -146,11 +146,13 @@ export default function Userpage() {
     const table = tableMap[currentReservation.type];
     
     const now = new Date();
-    const { data: userData } = await supabase.from("users").select("name").eq("email", email).single();
+    const { data: userData } = await supabase.from("users").select("name").eq("user_id", userId).single();
     
     await supabase.from(table).update({ check_in: now }).eq("id", currentReservation.data.id);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
     await supabase.from("recent").insert({
-      email, name: userData.name, check_in: now, status: "Checked In", purpose: currentReservation.type, created_at: currentReservation.data.created_at,
+      ...(isEmail ? { email: userId } : { phone: userId }),
+      name: userData.name, check_in: now, status: "Checked In", purpose: currentReservation.type, created_at: currentReservation.data.created_at,
     });
 
     setMessage("Checked in successfully!");
@@ -162,11 +164,13 @@ export default function Userpage() {
     const tableMap = { visit: "visitlogs", pitch: "business_pitch", interview: "interview", tech: "tech_event" };
     const table = tableMap[currentReservation.type];
     const now = new Date();
-    const { data: userData } = await supabase.from("users").select("name").eq("email", email).single();
+    const { data: userData } = await supabase.from("users").select("name").eq("user_id", userId).single();
 
     await supabase.from(table).update({ check_out: now }).eq("id", currentReservation.data.id);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
     await supabase.from("recent").insert({
-      email, name: userData.name, check_in: currentReservation.data.check_in, check_out: now, status: "Checked Out", purpose: currentReservation.type, created_at: currentReservation.data.created_at,
+      ...(isEmail ? { email: userId } : { phone: userId }),
+      name: userData.name, check_in: currentReservation.data.check_in, check_out: now, status: "Checked Out", purpose: currentReservation.type, created_at: currentReservation.data.created_at,
     });
 
     setMessage("Checked out successfully!");
@@ -174,12 +178,12 @@ export default function Userpage() {
   };
 
   const fetchPastReservations = async () => {
-    if (!email) return;
+    if (!userId) return;
     const tables = [{ name: "visitlogs", type: "Visit" }, { name: "business_pitch", type: "Pitch" }, { name: "interview", type: "Interview" }, { name: "tech_event", type: "Tech Event" }];
     
     try {
       const promises = tables.map((table) =>
-        supabase.from(table.name).select("*").eq("user_email", email).not("check_out", "is", null)
+        supabase.from(table.name).select("*").eq("user_id", userId).not("check_out", "is", null)
           .then(({ data }) => data.map((item) => ({ ...item, type: table.type })))
       );
       const results = await Promise.all(promises);
@@ -282,7 +286,7 @@ export default function Userpage() {
                 >
                     <div className="bg-[#552483]/5 p-4 border-b border-purple-100">
                         <p className="text-base font-bold text-[#552483]">{userDetails?.name}</p>
-                        <p className="text-xs text-gray-500">{email}</p>
+                        <p className="text-xs text-gray-500">{userId}</p>
                     </div>
                     <div className="p-4 space-y-2 text-sm text-gray-600">
                         <div className="flex justify-between">
@@ -332,7 +336,7 @@ export default function Userpage() {
                 </div>
                 <div className="mt-4 p-4 rounded-xl bg-[#552483]/5 border border-purple-100">
                     <p className="text-base font-bold text-[#552483] text-center">{userDetails?.name}</p>
-                    <p className="text-xs text-gray-500 text-center">{email}</p>
+                    <p className="text-xs text-gray-500 text-center">{userId}</p>
                     <div className="mt-4 border-t border-purple-100 pt-4">
                         <button onClick={handleLogout} className="w-full text-center block py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 font-medium transition-colors rounded-lg">
                             Logout
@@ -369,27 +373,8 @@ export default function Userpage() {
             className="w-full max-w-4xl md:mt-6"
           >
 
-            {/* --- RESTORED TICKET DESIGN --- */}
-            <div className="relative w-full bg-white rounded-2xl shadow-xl shadow-purple-900/10 flex flex-col-reverse md:flex-row overflow-hidden border-2 border-[#552483]">
-              
-              {/* Right Section (QR & Actions) - MOVED FOR MOBILE FIRST */}
-              <div className="w-full md:w-72 bg-[#552483]/5 p-6 flex flex-col justify-center items-center border-b-2 md:border-b-0 md:border-l-2 border-dashed border-gray-300">
-                 <p className="font-mono text-xs font-bold text-[#552483] mb-3 tracking-widest">SCAN AT KIOSK</p>
-                 
-                 <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 mb-4">
-                    <img
-                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=VISITOR-${currentReservation.data.id}`}
-                        alt="QR Code"
-                        className="w-36 h-36 md:w-32 md:h-32"
-                    />
-                 </div>
-
-                 <div className="w-full max-w-xs md:max-w-none">
-                    {!currentReservation.data.check_in ? <button onClick={handleCheckIn} className="w-full py-3 md:py-2 bg-[#552483] text-white font-bold rounded-lg shadow hover:bg-[#461e6b] transition-colors text-sm">Check In &gt;&gt;</button>
-                    : !currentReservation.data.check_out ? <button onClick={handleCheckOut} className="w-full py-3 md:py-2 bg-neutral-900 text-white font-bold rounded-lg shadow hover:bg-black transition-colors text-sm">Check Out &gt;&gt;</button>
-                    : <div className="w-full py-3 md:py-2 text-center bg-gray-200 rounded-lg text-gray-500 font-bold text-xs uppercase">Expired</div>}
-                 </div>
-              </div>
+            {/* --- TICKET DESIGN --- */}
+            <div className="relative w-full bg-white rounded-2xl shadow-xl shadow-purple-900/10 flex flex-col md:flex-row overflow-hidden border-2 border-[#552483]">
               
               {/* Left Section (Ticket Body) */}
               <div className="flex-1 p-6">
@@ -408,7 +393,7 @@ export default function Userpage() {
                  {/* Details Grid */}
                  <div className="grid grid-cols-1 gap-y-3 font-mono text-sm">
                     {Object.entries(currentReservation.data).map(([key, value]) => {
-                       if (value === null || value === "" || key === "id" || key === "user_email" || key === "created_at" || key === "check_in" || key === "check_out") return null;
+                       if (value === null || value === "" || key === "id" || key === "user_email" || key === "user_id" || key === "created_at" || key === "check_in" || key === "check_out") return null;
                        return (
                          <div key={key} className="flex justify-between border-b border-dashed border-gray-200/80 pb-2">
                             <span className="text-gray-500 font-medium uppercase text-xs pt-1">{formatKey(key)}</span>
@@ -437,9 +422,28 @@ export default function Userpage() {
               </div>
 
               {/* Separator (The Dashed Line & Holes) */}
-              <div className="hidden md:flex flex-col items-center justify-between relative bg-[#fcfaff] w-12 border-l-2 border-dashed border-gray-300/50">
+              <div className="hidden md:flex flex-col items-center justify-between relative bg-[#fcfaff] w-2 border-l-2 border-dashed border-gray-300/50">
                  <div className="absolute top-[-16px] left-[-16px] w-8 h-8 bg-neutral-50 rounded-full border-2 border-[#552483] z-10"></div>
                  <div className="absolute bottom-[-16px] left-[-16px] w-8 h-8 bg-neutral-50 rounded-full border-2 border-[#552483] z-10"></div>
+              </div>
+
+              {/* Right Section (QR & Actions) */}
+              <div className="w-full md:w-72 bg-[#fcfaff] p-6 flex flex-col justify-center items-center border-t-2 md:border-t-0 border-dashed border-gray-300">
+                 <p className="font-mono text-xs font-bold text-[#552483] mb-3 tracking-widest">SCAN QR CODE</p>
+                 
+                 <div className="bg-white p-2 rounded-lg shadow-sm border border-gray-200 mb-4">
+                    <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=VISITOR-${currentReservation.data.id}`}
+                        alt="QR Code"
+                        className="w-36 h-36 md:w-32 md:h-32"
+                    />
+                 </div>
+
+                 <div className="w-full max-w-xs md:max-w-none">
+                    {!currentReservation.data.check_in ? <button onClick={handleCheckIn} className="w-full py-3 md:py-2 bg-[#552483] text-white font-bold rounded-lg shadow hover:bg-[#461e6b] transition-colors text-sm">Check In &gt;&gt;</button>
+                    : !currentReservation.data.check_out ? <button onClick={handleCheckOut} className="w-full py-3 md:py-2 bg-neutral-900 text-white font-bold rounded-lg shadow hover:bg-black transition-colors text-sm">Check Out &gt;&gt;</button>
+                    : <div className="w-full py-3 md:py-2 text-center bg-gray-200 rounded-lg text-gray-500 font-bold text-xs uppercase">Expired</div>}
+                 </div>
               </div>
             </div>
           </motion.div>

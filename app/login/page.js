@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import Link from "next/link"; // eslint-disable-line
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../lib/supabaseClient";
 import { useRouter } from "next/navigation";
@@ -8,12 +8,13 @@ import * as faceapi from 'face-api.js';
 import Image from "next/image";
 import { APP_CONFIG_DEFAULTS } from "../../app-config";
 
-// Simple Icons Components (to avoid installing external libraries)
-const MailIcon = () => (
-  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+// Simple Icons Components
+const IdentifierIcon = () => (
+  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
   </svg>
 );
+
 const ArrowRightIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
@@ -37,14 +38,14 @@ const CameraIcon = () => (
 );
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [message, setMessage] = useState("");
   
   // ----------------------------------------------------------------
-  // AUTH FLOW STATE
-  // 'email' -> 'otp' -> 'face_verify' (for returning) OR 'details' (for new)
-  // 'email' -> 'otp' -> 'details' -> 'face_capture' (for new)
-  const [authStep, setAuthStep] = useState("email"); 
+  // AUTH FLOW STATE (Now with Phone)
+  // 'identifier' -> 'otp' -> 'face_verify' (for returning) OR 'details' (for new)
+  // 'identifier' -> 'otp' -> 'details' -> 'face_capture' (for new)
+  const [authStep, setAuthStep] = useState("identifier"); 
   const [flowType, setFlowType] = useState('register'); // 'register' or 'login'
   const [scrolled, setScrolled] = useState(false);
   
@@ -213,8 +214,8 @@ export default function LoginPage() {
         setMessage("Face Verified! Logging in...");
         stopVideo();
         
-        // Log user in
-        localStorage.setItem("session", JSON.stringify({ email, timestamp: Date.now() }));
+        // Log user in - using identifier which can be phone or email
+        localStorage.setItem("session", JSON.stringify({ identifier, timestamp: Date.now() }));
         setTimeout(() => router.push("/userpage"), 1500);
     }
   };
@@ -252,17 +253,19 @@ export default function LoginPage() {
   // ----------------------------------------------------------------
 
   // STEP 1: Send OTP
-  const handleEmailSubmit = async (e) => {
+  const handleIdentifierSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
     setMessage(""); // Clear old messages
 
-    // Check if user exists and is pending approval
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+
+    // Check if user exists and is pending approval using their phone number
     const { data: existingUser, error: userError } = await supabase
       .from("users")
       .select("face_image_status, face_image_url")
-      .eq("email", email)
+      .eq("user_id", identifier)
       .single();
 
     if (existingUser?.face_image_status === 'pending') {
@@ -271,37 +274,60 @@ export default function LoginPage() {
       return;
     }
 
-    // If user exists and is approved, set flow to login immediately
     if (existingUser?.face_image_status === 'approved' && existingUser?.face_image_url) {
       setFlowType('login');
     } else {
-      setFlowType('register'); // Otherwise, it's a registration flow
-    }
-
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-
-    const { error } = await supabase.from("users").upsert(
-      { email, otp_code: otp, otp_expires_at: expiresAt },
-      { onConflict: "email" }
-    );
-
-    if (error) { 
-        setMessage("Error: " + error.message); 
-        setLoading(false); 
-        return; 
+      setFlowType('register');
     }
 
     try {
-      await fetch("/api/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp }),
-      });
-      // setMessage("OTP sent to email.");
+      if (isEmail) {
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        const expires = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
+
+        const { error: upsertError } = await supabase.from("users").upsert(
+          { user_id: identifier, otp_code: otp, otp_expires_at: expires.toISOString() },
+          { onConflict: "user_id" }
+        );
+
+        if (upsertError) throw new Error(upsertError.message || "Could not save user data.");
+
+        const response = await fetch("/api/send-email-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: identifier, otp }),
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+          throw new Error(result.error || "Failed to send OTP email.");
+        }
+        setMessage("OTP sent to your email.");
+
+      } else { // It's a phone number
+        const { error: upsertError } = await supabase.from("users").upsert(
+          { user_id: identifier},
+          { onConflict: "user_id" }
+        );
+
+        if (upsertError) throw new Error(upsertError.message || "Could not save user data.");
+
+        const response = await fetch("/api/send-mobile-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: identifier }),
+        });
+
+        if (!response.ok) throw new Error("Failed to send OTP from server.");
+        setMessage("OTP sent to your phone.");
+      }
+
       setAuthStep("otp"); // MOVE TO STEP 2
       setTimeout(() => inputsRef.current[0]?.focus(), 120);
-    } catch (err) { setMessage("Error sending OTP"); }
+    } catch (err) { 
+      console.error("Error in identifier submission:", err);
+      setMessage(err.message || "An error occurred."); 
+    }
     setLoading(false);
   };
 
@@ -312,15 +338,53 @@ export default function LoginPage() {
     setLoading(true);
     setMessage("");
 
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
     const enteredOtp = digits.join("");
-    
-    const { data: user, error } = await supabase.from("users").select("*").eq("email", email).single();
 
-    if (error || !user || user.otp_code !== enteredOtp) {
-      setMessage("Invalid OTP."); setLoading(false); return;
+    if (isEmail) {
+      const { data: user, error } = await supabase
+        .from("users")
+        .select("otp_code, otp_expires_at")
+        .eq("user_id", identifier)
+        .single();
+
+      if (error || !user) {
+        setMessage("Could not find user."); setLoading(false); return;
+      }
+      if (user.otp_code !== enteredOtp) {
+        setMessage("Invalid OTP."); setLoading(false); return;
+      }
+      if (new Date(user.otp_expires_at) < new Date()) {
+        setMessage("OTP has expired. Please try again."); setLoading(false); return;
+      }
+      // Clear OTP after successful verification
+      await supabase.from("users").update({ otp: null, otp_expires_at: null }).eq("user_id", identifier);
+
+    } else { // It's a phone number, use Twilio
+      try {
+        const response = await fetch('/api/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: identifier, otp: enteredOtp }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Invalid OTP.');
+        }
+      } catch (err) {
+        setMessage(err.message);
+        setLoading(false);
+        return;
+      }
     }
-    
-    // OTP IS GOOD. NOW CHECK THEIR FACE STATUS.
+
+    const { data: user, error } = await supabase.from("users").select("*").eq("user_id", identifier).single();
+
+    if (error || !user) {
+      setMessage("Invalid identifier or server error."); setLoading(false); return;
+    }
     const goToRegistration = (message) => {
       setFormData({ 
         // Reset form data for new/rejected users
@@ -377,7 +441,7 @@ export default function LoginPage() {
     setLoading(true);
     let faceImageUrl = null;
     if (capturedImageBlob) {
-      const filePath = `user_faces/${email}/face.png`;
+      const filePath = `user_faces/${identifier}/face.png`;
       const { error: uploadError } = await supabase.storage
         .from("user-media")
         .upload(filePath, capturedImageBlob, { upsert: true });
@@ -405,14 +469,14 @@ export default function LoginPage() {
       updates.face_descriptor = Array.from(currentFaceDescriptor);
     }
 
-    const { error } = await supabase.from("users").update(updates).eq("email", email);
+    const { error } = await supabase.from("users").update(updates).eq("user_id", identifier);
 
     if (error) {
       setMessage("Error saving details: " + error.message);
     } else {
       setMessage("Registration Complete! Redirecting to your page...");
-      // Log user in by creating a session
-      localStorage.setItem("session", JSON.stringify({ email, timestamp: Date.now() }));
+      // Log user in by creating a session with the identifier
+      localStorage.setItem("session", JSON.stringify({ identifier, timestamp: Date.now() }));
       setTimeout(() => {
         router.push("/userpage");
       }, 1500);
@@ -431,7 +495,7 @@ export default function LoginPage() {
 
   // Helper to determine visual step number (1-4) based on authStep string
   const getVisualStep = () => {
-      if (authStep === 'email') return 1;
+      if (authStep === 'identifier') return 1;
       if (authStep === 'otp') return 2; 
       if (authStep === 'details') return 3;
       if (authStep === 'face_capture') return 4;
@@ -529,7 +593,7 @@ export default function LoginPage() {
           <div className="w-full max-w-md bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(85,36,131,0.15)] p-8 relative overflow-hidden">
             
             {/* STEPPER INDICATOR */}
-            {authStep !== 'email' && (
+            {authStep !== 'identifier' && (
               <div className="flex items-center justify-center mb-8 relative z-10">
                   {(flowType === 'login' ? [1, 2, 3] : [1, 2, 3, 4]).map((step, index, arr) => {
                       const isActive = getVisualStep() >= step;
@@ -553,9 +617,9 @@ export default function LoginPage() {
             <AnimatePresence mode="wait">
                 
                 {/* -------------------- STEP 1: EMAIL -------------------- */}
-                {authStep === 'email' && (
+                {authStep === 'identifier' && (
                     <motion.div 
-                        key="step-email"
+                        key="step-identifier"
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
@@ -575,20 +639,20 @@ export default function LoginPage() {
                             </div>
                         )}
                         <h2 className="text-3xl font-bold text-neutral-900 mb-3">Welcome</h2>
-                        <p className="text-neutral-500 mb-6 text-sm">Enter your email to receive a secure access code</p>
+                        <p className="text-neutral-500 mb-6 text-sm">Enter your email or phone number to begin.</p>
                         
-                        <form onSubmit={handleEmailSubmit} className="space-y-4">
+                        <form onSubmit={handleIdentifierSubmit} className="space-y-4">
                             <div className="relative group">
                                 <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-colors group-focus-within:text-[#552483]">
-                                    <MailIcon />
+                                    <IdentifierIcon />
                                 </div>
                                 <input
-                                    type="email"
+                                    type="text"
                                     required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
+                                    value={identifier}
+                                    onChange={(e) => setIdentifier(e.target.value)}
                                     className="w-full bg-neutral-50 text-neutral-900 border-2 border-transparent rounded-2xl py-4 pl-12 pr-4 outline-none focus:bg-white focus:border-[#552483]/20 focus:shadow-[0_0_0_4px_rgba(85,36,131,0.1)] transition-all font-medium placeholder:text-neutral-400"
-                                    placeholder="you@example.com"
+                                    placeholder="Email or Phone Number"
                                 />
                             </div>
 
@@ -627,7 +691,7 @@ export default function LoginPage() {
                             </div>
                         )}
                         <h2 className="text-3xl font-bold text-neutral-900 mb-3">Check Inbox</h2>
-                        <p className="text-neutral-500 mb-6 text-sm">We sent a code to <span className="font-semibold text-neutral-800">{email}</span></p>
+                        <p className="text-neutral-500 mb-6 text-sm">We sent a code to <span className="font-semibold text-neutral-800">{identifier}</span></p>
                         
                         <form onSubmit={handleOtpSubmit} className="space-y-6">
                             <div className="flex justify-center gap-3">
@@ -653,8 +717,8 @@ export default function LoginPage() {
                                 {loading ? "Verifying..." : "Verify & Login"}
                             </button>
 
-                            <button onClick={() => setAuthStep('email')} className="text-sm text-neutral-400 hover:text-neutral-600 transition-colors">
-                                Change email address
+                            <button onClick={() => setAuthStep('identifier')} className="text-sm text-neutral-400 hover:text-neutral-600 transition-colors">
+                                Use a different email or phone
                             </button>
                         </form>
                     </motion.div>
@@ -837,7 +901,7 @@ export default function LoginPage() {
 
             </AnimatePresence>
 
-            {authStep === 'email' && (
+            {authStep === 'identifier' && (
                 <div className="mt-8 text-center">
                     <p className="text-xs text-neutral-400">We'll send you a secure access code.</p>
                 </div>

@@ -2,13 +2,12 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../../lib/supabaseClient";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 
 export default function TechEventPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [email, setEmail] = useState(null); // State to hold the user's email
+  const [userId, setUserId] = useState(null); // State to hold the user's ID
 
   // form fields
   const [eventName, setEventName] = useState("");
@@ -23,63 +22,53 @@ export default function TechEventPage() {
       return;
     }
 
-    const { email: sessionEmail, timestamp } = JSON.parse(sessionData);
+    const { identifier: sessionUserId, timestamp } = JSON.parse(sessionData);
     const tenMinutes = 10 * 60 * 1000;
     if (Date.now() - timestamp > tenMinutes) {
       localStorage.removeItem("session");
       router.replace("/login");
       return;
     }
+    setUserId(sessionUserId);
 
-    setEmail(sessionEmail);
-
-    if (!email) {
-      return;
-    }
-
-    const fetchCurrentEvent = async () => {
-      const { data, error } = await supabase
-        .from("tech_events")
-        .select("*")
-        .eq("user_email", email)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (!error && data && data.length > 0) {
-        setCurrentEvent(data[0]);
-      } else {
-        setCurrentEvent(null);
-      }
+    const fetchCurrentEvent = async (id) => {
+      const { data, error } = await supabase.from("tech_event").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(1);
+      if (!error && data.length > 0) setCurrentEvent(data[0]);
+      else setCurrentEvent(null);
       setLoading(false);
     };
 
-    fetchCurrentEvent();
-  }, [email, router]);
+    if (sessionUserId) fetchCurrentEvent(sessionUserId);
+    else setLoading(false);
+  }, [router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     setMessage("Saving event...");
 
-    if (!email) {
+    if (!userId) {
       setMessage("Session expired. Please log in again.");
+      setLoading(false);
       return;
     }
 
     const { data: userData, error: userError } = await supabase
       .from("users")
       .select("name")
-      .eq("email", email)
+      .eq("user_id", userId)
       .single();
     if (userError || !userData) {
       setMessage("Error fetching user details: " + (userError?.message || "User not found."));
+      setLoading(false);
       return;
     }
     const userName = userData.name;
 
     const creationTime = new Date(); // Create a single timestamp
-    const { data, error } = await supabase.from("tech_event").insert([
+    const { error } = await supabase.from("tech_event").insert([
       {
-        user_email: email,
+        user_id: userId,
         event_name: eventName,
         event_date_time: eventDateTime,
         role_of_interest: roleOfInterest,
@@ -89,9 +78,10 @@ export default function TechEventPage() {
       },
     ]);
 
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userId);
     const { error: recentError } = await supabase.from("recent").insert([
       {
-        email: email,
+        ...(isEmail ? { email: userId } : { phone: userId }),
         name: userName,
         purpose: "tech",
         status: "Pending",
@@ -101,12 +91,13 @@ export default function TechEventPage() {
       },
     ]);
 
-    if (error) {
-      setMessage("Error saving event: " + error.message);
+    if (error || recentError) {
+      setMessage("Error saving event: " + (error?.message || recentError?.message));
     } else {
       setMessage("Event saved successfully!");
       router.push(`/userpage`);
     }
+    setLoading(false);
   };
 
   return (
@@ -184,7 +175,8 @@ export default function TechEventPage() {
             />
             <button
               type="submit"
-              className="w-full px-4 py-3 text-white bg-[#552483] rounded-md font-semibold hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-[#552483]"
+              disabled={loading}
+              className="w-full px-4 py-3 text-white bg-[#552483] rounded-md font-semibold hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white focus:ring-[#552483] disabled:bg-gray-400"
             >
               Register Event
             </button>
